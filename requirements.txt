@@ -1,0 +1,4 @@
+tls_client
+fastapi[standard]
+pydantic
+fake_useragent

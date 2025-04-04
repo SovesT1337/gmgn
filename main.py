@@ -114,6 +114,7 @@ class gmgn:
 
 gmgn = gmgn()
 
+    
 @app.get("/pools/{pool_type}", response_model=List[TokenResponse])
 async def get_trending_tokens(
     pool_type: PoolType,
@@ -138,6 +139,11 @@ async def get_trending_tokens(
         )
         pprint(raw_data)
         return [transform_trending_tokens(item) for item in raw_data.get('rank', [])]
+
+@app.get("/")
+async def hello(
+):
+    return "Hello World"
 
 def transform_new_pairs(raw_item: dict) -> dict:
     base_info = raw_item.get('base_token_info', {})

@@ -1,5 +1,5 @@
 from enum import Enum
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -7,7 +7,7 @@ from pprint import pprint
 import random
 import tls_client
 from fake_useragent import UserAgent
-
+from security import verify_api_key
 app = FastAPI()
 
 class Duration(str, Enum):
@@ -117,9 +117,10 @@ gmgn = gmgn()
 @app.get("/pools/{pool_type}", response_model=List[TokenResponse])
 async def get_trending_tokens(
     pool_type: PoolType,
-    network: Network = Query(None),
-    sort: Sort = Query(None),
-    duration: Optional[Duration] = Query(None),
+    network: Network = "eth",
+    sort: Sort = "desc",
+    duration: Optional[Duration] = "24h",
+    x_api_key: str = Depends(verify_api_key)
     # page: int = Query(1, ge=1),
 ):
 

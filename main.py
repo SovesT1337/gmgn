@@ -7,6 +7,9 @@ import random
 import tls_client
 from fake_useragent import UserAgent
 from security import verify_api_key
+from config import PROXY
+import httpx
+
 app = FastAPI()
 
 class Duration(str, Enum):
@@ -80,12 +83,22 @@ class gmgn:
 
     def send_request(self, url: str):
         self.randomiseRequest()
-
-        responce = self.sendRequest.get(url, headers=self.headers)
+        proxies = {
+                "http://": PROXY,
+                "https://": PROXY,
+            }
+        responce = self.sendRequest.execute_request(method="GET", url=url, headers=self.headers, proxy=proxies)
 
         print(responce.status_code)
         if responce.status_code == 403:
-            return self.send_request(url=url)
+            responce = self.sendRequest.get(url, headers=self.headers)
+
+        print(responce.status_code)
+        if responce.status_code == 403: 
+            raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"GMGN Error"
+                )
 
         return responce.json()['data']
 

@@ -1,9 +1,8 @@
 from enum import Enum
-from fastapi import FastAPI, Query, Depends
+from fastapi import FastAPI, Query, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
-from pprint import pprint
 import random
 import tls_client
 from fake_useragent import UserAgent
@@ -57,7 +56,7 @@ class gmgn:
 
         parts = self.identifier.split('_')
         identifier, version, *rest = parts
-        other = rest[0] if rest else None
+        # other = rest[0] if rest else None
         
         os = 'Windows'
         if identifier == 'opera':
@@ -79,25 +78,53 @@ class gmgn:
             'user-agent': self.user_agent
         }
 
-    def getNewPairs(self, 
-                    limit: int = None, 
-                    network: str = "sol", 
-                    sort: str = "desc") -> dict:
+    def send_request(self, url: str):
         self.randomiseRequest()
+
+        responce = self.sendRequest.get(url, headers=self.headers)
+
+        print(responce.status_code)
+        if responce.status_code == 403:
+            return self.send_request(url=url)
+
+        return responce.json()['data']
+
+
+    def getNewPairs(self, limit: int, network: str, sort: str) -> dict:
         if not limit:
             limit = 50
         elif limit > 50:
             return "You cannot have more than check more than 50 pairs."
         url = f"{self.BASE_URL}/v1/pairs/{network}/new_pairs?limit={limit}&orderby=open_timestamp&direction={sort}&filters[]=not_honeypot"
-        request = self.sendRequest.get(url, headers=self.headers)
-        return request.json()['data']
+
+        raw_data = self.send_request(url=url)
+
+        result = []
+        for raw_item in raw_data.get('pairs'):
+            base_info = raw_item.get('base_token_info', {})
+
+            result.append({
+                    "name": base_info.get("name", ""),
+                    "logo": str(base_info.get("logo", "")),
+                    "price": str(raw_item.get("quote_reserve_usd", "0")),
+                    "symbol": base_info.get("symbol", ""),
+                    "volume": str(base_info.get("volume", "0")),
+                    "address": raw_item.get("base_address", ""),
+                    "network": raw_item.get('chain', ""),
+                    "createdAt": str(raw_item.get("creation_timestamp", "")),
+                    "market_cap": str(base_info.get("market_cap", "0")),
+                    "transactions": base_info.get("swaps", 0),
+                    "percent_change": str(
+                        base_info.get("price_change_percent1h") 
+                        or base_info.get("price_change_percent5m") 
+                        or "0.00"
+                    ),
+                })
+
+        return result
     
     
-    def getTrendingTokens(self, 
-                          timeframe: str = "1h",
-                          network: str = "sol", 
-                          sort: str = "desc") -> dict:
-        self.randomiseRequest()
+    def getTrendingTokens(self, timeframe: str, network: str, sort: str) -> dict:
         
         if timeframe not in ["1m", "5m", "1h", "6h", "24h"]:
             return "Not a valid timeframe."
@@ -107,10 +134,26 @@ class gmgn:
         else:
             url = f"{self.BASE_URL}/v1/rank/{network}/swaps/{timeframe}?orderby=swaps&direction={sort}"
         
-        request = self.sendRequest.get(url, headers=self.headers)
+        raw_data = self.send_request(url=url)
 
-        return request.json()['data']
+        result = []
+        for raw_item in raw_data['rank']:
 
+            result.append({
+                    "name": str(raw_item.get('twitter_username', '')),
+                    "logo": str(raw_item.get('logo', '')),
+                    "price": str(raw_item.get('price', 0)),
+                    "symbol": raw_item.get('symbol', ""),
+                    "volume": str(raw_item.get('volume', 0)),
+                    "address": raw_item.get('address', ""),
+                    "network": raw_item.get('chain', ""),
+                    "createdAt": str(raw_item.get('open_timestamp', "")),
+                    "market_cap": str(raw_item.get('market_cap', 0)),
+                    "transactions": raw_item.get('swaps', 0),
+                    "percent_change": str(raw_item.get('price_change_percent')),
+                })
+
+        return result
 
 gmgn = gmgn()
 
@@ -124,65 +167,16 @@ async def get_trending_tokens(
     x_api_key: str = Depends(verify_api_key)
     # page: int = Query(1, ge=1),
 ):
+    match pool_type:
+        case "gmgn_new":
+            data = gmgn.getNewPairs(network=network.value, sort=sort.value, limit=50)
+            return data
 
-    if pool_type == "gmgn_new":
-        raw_data = gmgn.getNewPairs(network=network.value, 
-                                    sort=sort.value)
-        pprint(raw_data)
-        return [transform_new_pairs(item) for item in raw_data.get('pairs', [])]
-
-    if pool_type == "gmgn_trending":
-        raw_data = gmgn.getTrendingTokens(
-            timeframe=duration.value, 
-            network=network.value, 
-            sort=sort.value
-        )
-        pprint(raw_data)
-        return [transform_trending_tokens(item) for item in raw_data.get('rank', [])]
+        case "gmgn_trending":
+            data = gmgn.getTrendingTokens(timeframe=duration.value, network=network.value, sort=sort.value)
+            return data
 
 @app.get("/")
 async def hello(
 ):
     return "Hello World"
-
-def transform_new_pairs(raw_item: dict) -> dict:
-    base_info = raw_item.get('base_token_info', {})
-    
-    return {
-        "symbol": base_info.get("symbol", ""),
-        "name": base_info.get("name", ""),
-        "address": raw_item.get("base_address", ""),
-        "network": raw_item['chain'] if raw_item.get('chain') else "",
-        "logo": base_info.get("logo", "") or "",
-        "price": str(raw_item.get("quote_reserve_usd", "0")),
-        "volume": str(base_info.get("volume", "0")),
-        "market_cap": str(base_info.get("market_cap", "0")),
-        "percent_change": str(
-            base_info.get("price_change_percent1h") 
-            or base_info.get("price_change_percent5m") 
-            or "0.00"
-        ),
-        "transactions": base_info.get("swaps", 0) or 0,
-        "createdAt": str(raw_item["creation_timestamp"]) if raw_item.get("creation_timestamp") else ""
-    }
-
-def transform_trending_tokens(raw_item: dict) -> dict:
-    name = raw_item.get('twitter_username', '')
-    if not name:
-        name = raw_item['symbol']  # Используем символ как имя, если нет других данных
-
-    percent_change = raw_item.get('price_change_percent') 
-
-    return {
-        "symbol": raw_item['symbol'],
-        "name": name,
-        "address": raw_item['address'],
-        "network": raw_item['chain'] if raw_item.get('chain') else "",
-        "logo": raw_item['logo'] if raw_item.get('logo', '') else "",
-        "price": f"{raw_item.get('price', 0):.7f}".rstrip('0').rstrip('.'),
-        "volume": f"{raw_item.get('volume', 0):.2f}",
-        "market_cap": str(raw_item.get('market_cap', 0)),
-        "percent_change": f"{percent_change:.6f}".rstrip('0').rstrip('.'),
-        "transactions": raw_item.get('swaps', 0),
-        "createdAt": str(raw_item['open_timestamp']) if raw_item.get('open_timestamp') else ""
-    }

@@ -7,8 +7,8 @@ import random
 import tls_client
 from fake_useragent import UserAgent
 from security import verify_api_key
-from config import PROXY
-import httpx
+from config import PROXY_SOURCE_URL
+import requests
 
 app = FastAPI()
 
@@ -48,10 +48,10 @@ class TokenResponse(BaseModel):
 
 
 class gmgn:
-    BASE_URL = "https://gmgn.ai/defi/quotation"
-
     def __init__(self):
-        pass
+        responce = requests.get(PROXY_SOURCE_URL)
+        self.proxy_list = responce.text
+        self.url = "https://gmgn.ai/defi/quotation"
 
     def randomiseRequest(self):
         self.identifier = random.choice([browser for browser in tls_client.settings.ClientIdentifiers.__args__ if browser.startswith(('chrome', 'safari', 'firefox', 'opera'))])
@@ -59,7 +59,6 @@ class gmgn:
 
         parts = self.identifier.split('_')
         identifier, version, *rest = parts
-        # other = rest[0] if rest else None
         
         os = 'Windows'
         if identifier == 'opera':
@@ -83,9 +82,10 @@ class gmgn:
 
     def send_request(self, url: str):
         self.randomiseRequest()
+        proxie = random.choice(self.proxy_list)
         proxies = {
-                "http://": PROXY,
-                "https://": PROXY,
+                "http://": proxie,
+                "https://": proxie,
             }
         responce = self.sendRequest.execute_request(method="GET", url=url, headers=self.headers, proxy=proxies)
 
@@ -108,7 +108,7 @@ class gmgn:
             limit = 50
         elif limit > 50:
             return "You cannot have more than check more than 50 pairs."
-        url = f"{self.BASE_URL}/v1/pairs/{network}/new_pairs?limit={limit}&orderby=open_timestamp&direction={sort}&filters[]=not_honeypot"
+        url = f"{self.url}/v1/pairs/{network}/new_pairs?limit={limit}&orderby=open_timestamp&direction={sort}&filters[]=not_honeypot"
 
         raw_data = self.send_request(url=url)
 
@@ -143,9 +143,9 @@ class gmgn:
             return "Not a valid timeframe."
 
         if timeframe == "1m":
-            url = f"{self.BASE_URL}/v1/rank/{network}/swaps/{timeframe}?orderby=swaps&direction={sort}&limit=20"
+            url = f"{self.url}/v1/rank/{network}/swaps/{timeframe}?orderby=swaps&direction={sort}&limit=20"
         else:
-            url = f"{self.BASE_URL}/v1/rank/{network}/swaps/{timeframe}?orderby=swaps&direction={sort}"
+            url = f"{self.url}/v1/rank/{network}/swaps/{timeframe}?orderby=swaps&direction={sort}"
         
         raw_data = self.send_request(url=url)
 
